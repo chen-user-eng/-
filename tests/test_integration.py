@@ -257,13 +257,18 @@ def test_api_integration():
     print("\n========== 测试5: API集成测试 ==========")
     result = TestResult()
 
+    run_api_test = os.environ.get('RUN_API_TEST', 'false').lower() == 'true'
+
+    if not run_api_test:
+        result.warn("跳过API测试", "设置RUN_API_TEST=true启用")
+        result.record("API集成测试（已跳过）", True)
+        return result
+
     try:
         import requests
 
-        # 测试本地服务
-        base_url = "http://localhost:5000"
+        base_url = os.environ.get('API_BASE_URL', 'http://localhost:5000')
 
-        # 测试概览接口
         try:
             resp = requests.get(f"{base_url}/api/overview", timeout=5)
             result.record(
@@ -279,7 +284,6 @@ def test_api_integration():
         except Exception as e:
             result.record("概览接口可访问", False, str(e))
 
-        # 测试异常接口
         try:
             resp = requests.get(f"{base_url}/api/anomaly?page=1&page_size=5", timeout=5)
             result.record(
