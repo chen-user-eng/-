@@ -7,12 +7,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # ============================================================
-  # 1. 数据格式校验与字段类型转换
-  # ============================================================
   data-validation:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,91 +19,17 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install pandas numpy
+        run: pip install pandas numpy
 
       - name: Data Format Validation
-        run: |
-          python -c "
-import pandas as pd
-import sys
-
-# 验证测试数据格式
-test_files = [
-    'tests/test_data/test_all_index.csv',
-    'tests/test_data/test_categories.csv',
-    'tests/test_data/test_products.csv',
-    'tests/test_data/test_anomaly_2028-05-15.csv'
-]
-
-errors = []
-for f in test_files:
-    try:
-        df = pd.read_csv(f)
-        print(f'✓ {f}: {len(df)} rows, {len(df.columns)} columns')
-        
-        # 验证必需字段
-        if 'test_all_index' in f:
-            required = ['dt', 'index_type', 'target_id', 'price', 'base_price', 'price_index']
-            missing = [c for c in required if c not in df.columns]
-            if missing:
-                errors.append(f'{f}: missing columns {missing}')
-        
-        # 验证数据类型
-        for col in ['price', 'base_price', 'price_index']:
-            if col in df.columns and not pd.api.types.is_numeric_dtype(df[col]):
-                errors.append(f'{f}: column {col} is not numeric')
-                
-    except Exception as e:
-        errors.append(f'{f}: {str(e)}')
-
-if errors:
-    print('\\nErrors found:')
-    for e in errors:
-        print(f'  - {e}')
-    sys.exit(1)
-else:
-    print('\\nAll data files validated successfully!')
-"
+        run: python tests/validate_data.py
 
       - name: Field Type Conversion Test
-        run: |
-          python -c "
-import pandas as pd
+        run: python tests/test_type_conversion.py
 
-# 读取测试数据
-df = pd.read_csv('tests/test_data/test_all_index.csv')
-
-# 测试字段类型转换
-df['price'] = pd.to_numeric(df['price'], errors='coerce')
-df['base_price'] = pd.to_numeric(df['base_price'], errors='coerce')
-df['price_index'] = pd.to_numeric(df['price_index'], errors='coerce')
-
-# 验证转换后无空值（对于price/base_price）
-null_prices = df[['price', 'base_price']].isnull().sum()
-if null_prices.any():
-    print(f'警告: 价格字段存在空值: {null_prices.to_dict()}')
-
-# 验证计算
-df['calc_index'] = (df['price'] / df['base_price']) * 100
-df['diff'] = abs(df['calc_index'] - df['price_index'])
-max_diff = df['diff'].max()
-print(f'价格指数计算最大误差: {max_diff:.4f}%')
-
-if max_diff > 0.1:
-    print('错误: 价格指数计算误差过大')
-    exit(1)
-else:
-    print('字段类型转换测试通过!')
-"
-
-  # ============================================================
-  # 2. 单元测试
-  # ============================================================
   unit-tests:
     runs-on: ubuntu-latest
     needs: data-validation
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -118,20 +40,14 @@ else:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run Unit Tests
-        run: |
-          python tests/test_unit.py
+        run: python tests/test_unit.py
 
-  # ============================================================
-  # 3. 集成测试
-  # ============================================================
   integration-tests:
     runs-on: ubuntu-latest
     needs: unit-tests
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -142,31 +58,23 @@ else:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run Integration Tests
-        run: |
-          python tests/test_integration.py
+        run: python tests/test_integration.py
         env:
-          # ClickHouse配置（通过GitHub Secrets注入）
           CH_HOST: ${{ secrets.CH_HOST }}
           CH_PORT: ${{ secrets.CH_PORT }}
           CH_USER: ${{ secrets.CH_USER }}
           CH_PASSWORD: ${{ secrets.CH_PASSWORD }}
           CH_DATABASE: ${{ secrets.CH_DATABASE }}
-          # OSS配置
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
-  # ============================================================
-  # 4. 部署至ClickHouse与可视化服务
-  # ============================================================
   deploy:
     runs-on: ubuntu-latest
     needs: integration-tests
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -177,83 +85,58 @@ else:
           python-version: '3.10'
 
       - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create config.py
         run: |
-          pip install -r requirements.txt
+          cat > config.py << 'CONFIGEOF'
+          import os
 
-      - name: Configure OSS Client
-        run: |
-          cat > config.py << 'EOF'
-import os
+          OSS_ACCESS_KEY_ID = os.environ.get('OSS_ACCESS_KEY_ID')
+          OSS_ACCESS_KEY_SECRET = os.environ.get('OSS_ACCESS_KEY_SECRET')
+          OSS_ENDPOINT = 'oss-cn-hangzhou.aliyuncs.com'
+          OSS_BUCKET = 'dashujujishu'
+          OSS_DATA_PREFIX = 'data/'
+          OSS_ODS_PREFIX = 'data/ods/'
+          OSS_DIM_PREFIX = 'data/dim/'
+          OSS_ADS_PREFIX = 'data/ads/'
 
-# OSS配置
-OSS_ACCESS_KEY_ID = os.environ.get('OSS_ACCESS_KEY_ID')
-OSS_ACCESS_KEY_SECRET = os.environ.get('OSS_ACCESS_KEY_SECRET')
-OSS_ENDPOINT = 'oss-cn-hangzhou.aliyuncs.com'
-OSS_BUCKET = 'dashujujishu'
+          CH_HOST = os.environ.get('CH_HOST')
+          CH_PORT = int(os.environ.get('CH_PORT', 9000))
+          CH_USER = os.environ.get('CH_USER', 'default')
+          CH_PASSWORD = os.environ.get('CH_PASSWORD')
+          CH_DATABASE = os.environ.get('CH_DATABASE', 'default')
+          CH_HTTP_PORT = 8123
 
-# OSS路径配置
-OSS_DATA_PREFIX = 'data/'
-OSS_ODS_PREFIX = 'data/ods/'
-OSS_DIM_PREFIX = 'data/dim/'
-OSS_ADS_PREFIX = 'data/ads/'
-
-# ClickHouse配置
-CH_HOST = os.environ.get('CH_HOST')
-CH_PORT = int(os.environ.get('CH_PORT', 9000))
-CH_USER = os.environ.get('CH_USER', 'default')
-CH_PASSWORD = os.environ.get('CH_PASSWORD')
-CH_DATABASE = os.environ.get('CH_DATABASE', 'default')
-CH_HTTP_PORT = 8123
-
-# 本地数据目录
-LOCAL_DATA_DIR = 'e:/111/data'
-
-# 数据源: 'local' 或 'clickhouse'
-DATA_SOURCE = 'clickhouse'
-EOF
+          LOCAL_DATA_DIR = 'e:/111/data'
+          DATA_SOURCE = 'clickhouse'
+          CONFIGEOF
 
       - name: Upload Test Data to OSS
-        run: |
-          python -c "
-import oss2
-import os
-
-auth = oss2.Auth('${{ secrets.OSS_ACCESS_KEY_ID }}', '${{ secrets.OSS_ACCESS_KEY_SECRET }}')
-bucket = oss2.Bucket(oss2.Resolver(), 'oss-cn-hangzhou.aliyuncs.com', 'dashujujishu')
-
-# 上传测试数据到OSS
-test_files = [
-    ('tests/test_data/test_all_index.csv', 'data/test/test_all_index.csv'),
-    ('tests/test_data/test_categories.csv', 'data/test/test_categories.csv'),
-    ('tests/test_data/test_products.csv', 'data/test/test_products.csv'),
-]
-
-for local_path, oss_path in test_files:
-    if os.path.exists(local_path):
-        result = bucket.put_object(oss_path, open(local_path, 'rb'))
-        print(f'Uploaded {local_path} -> {oss_path}, status: {result.status}')
-"
+        run: python tests/upload_test_data.py
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
       - name: Deploy to ClickHouse
-        run: |
-          python scripts/setup_clickhouse_from_oss.py
+        run: python scripts/setup_clickhouse_from_oss.py
         env:
           CH_HOST: ${{ secrets.CH_HOST }}
           CH_PORT: ${{ secrets.CH_PORT }}
           CH_USER: ${{ secrets.CH_USER }}
           CH_PASSWORD: ${{ secrets.CH_PASSWORD }}
           CH_DATABASE: ${{ secrets.CH_DATABASE }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
       - name: Verify Deployment
-        run: |
-          python -c "
-from scripts.clickhouse_utils import get_ch_client
-client = get_ch_client()
-result = client.query('SELECT count() FROM ads_price_index_local')
-print(f'ads_price_index_local rows: {result.first()}")
-result = client.query('SELECT count() FROM dim_products_local')
-print(f'dim_products_local rows: {result.first()}")
-"
+        run: python tests/verify_deploy.py
+        env:
+          CH_HOST: ${{ secrets.CH_HOST }}
+          CH_PORT: ${{ secrets.CH_PORT }}
+          CH_USER: ${{ secrets.CH_USER }}
+          CH_PASSWORD: ${{ secrets.CH_PASSWORD }}
+          CH_DATABASE: ${{ secrets.CH_DATABASE }}
 
       - name: Start Visualization Service
         run: |
@@ -266,6 +149,12 @@ print(f'dim_products_local rows: {result.first()}")
             echo 'Flask service may have issues, check logs'
             cat flask.log
           fi
+        env:
+          CH_HOST: ${{ secrets.CH_HOST }}
+          CH_PORT: ${{ secrets.CH_PORT }}
+          CH_USER: ${{ secrets.CH_USER }}
+          CH_PASSWORD: ${{ secrets.CH_PASSWORD }}
+          CH_DATABASE: ${{ secrets.CH_DATABASE }}
 
       - name: Health Check
         run: |
