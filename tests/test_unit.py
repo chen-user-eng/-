@@ -173,7 +173,7 @@ def test_anomaly_parsing():
 
     result.record(
         f"异常数据有 {len(df)} 条",
-        len(df) == 6
+        len(df) == 7
     )
 
     return result
@@ -258,14 +258,14 @@ def test_anomaly_detection():
     expected_mutations = abs(anomaly_df[anomaly_df['anomaly_type'] == '价格突变']['change_rate']) > sudden_threshold
     result.record(
         "价格突变阈值判断正确",
-        expected_mutations.sum() == 6
+        expected_mutations.sum() == 7
     )
 
     # 验证异常类型统计
     anomaly_stats = anomaly_df.groupby('anomaly_type').size()
     result.record(
         f"异常类型统计: 价格突变={anomaly_stats.get('价格突变', 0)}",
-        anomaly_stats.get('价格突变', 0) == 6
+        anomaly_stats.get('价格突变', 0) == 7
     )
 
     return result
