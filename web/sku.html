@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKU分析 - 高频电商价格指数计算平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="date-info">SKU价格指数分析</div>
+        <h1>高频电商价格指数计算平台</h1>
+        <div class="nav">
+            <a href="/">首页大屏</a>
+            <a href="/category.html">类目分析</a>
+            <a href="/sku.html" class="active">SKU分析</a>
+            <a href="/anomaly.html">异常数据</a>
+            <a href="/report.html">日报中心</a>
+        </div>
+    </div>
+    <div class="page-container">
+        <div class="page-header">
+            <h2>SKU价格分析</h2>
+            <div class="search-box">
+                <input type="text" id="skuSearch" placeholder="输入商品名称搜索..." style="width:300px;">
+                <button onclick="searchSku()">搜索</button>
+                <select id="daysSelect" onchange="loadSkuDetail()">
+                    <option value="30">近30日</option>
+                    <option value="60">近60日</option>
+                    <option value="90">近90日</option>
+                    <option value="180">近180日</option>
+                    <option value="365">近1年</option>
+                    <option value="730">近2年</option>
+                    <option value="1095">近3年</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="table-container" id="searchResults" style="margin-bottom:20px;"></div>
+
+        <div class="detail-card" id="skuDetailCard" style="display:none;">
+            <div class="detail-grid" id="skuSummary"></div>
+        </div>
+
+        <div class="charts-row" id="skuCharts" style="display:none;">
+            <div class="chart-card">
+                <div class="chart-title">价格走势</div>
+                <div class="chart-container" id="skuPriceChart"></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">SKU价格指数走势</div>
+                <div class="chart-container" id="skuIndexChart"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let skuPriceChart, skuIndexChart;
+        let currentSkuId = '';
+
+        function formatChange(val) {
+            if (val === null || val === undefined || isNaN(val)) return '--';
+            const prefix = val > 0 ? '+' : '';
+            return prefix + val.toFixed(2) + '%';
+        }
+
+        function searchSku() {
+            const q = document.getElementById('skuSearch').value;
+            fetch(`/api/sku/search?q=${encodeURIComponent(q)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.length === 0) {
+                        document.getElementById('searchResults').innerHTML =
+                            '<div style="padding:20px;text-align:center;color:#90caf9;">未找到相关商品</div>';
+                        return;
+                    }
+                    const html = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>商品ID</th>
+                                    <th>商品名称</th>
+                                    <th>一级类目</th>
+                                    <th>二级类目</th>
+                                    <th>价格指数</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.map(item => `
+                                    <tr>
+                                        <td>${item.id}</td>
+                                        <td>${item.name}</td>
+                                        <td>${item.category_l1}</td>
+                                        <td>${item.category}</td>
+                                        <td>${item.price_index.toFixed(2)}</td>
+                                        <td><button style="padding:4px 12px;background:#2a6cb8;color:#fff;border:none;border-radius:4px;cursor:pointer;"
+                                            onclick="selectSku('${item.id}')">查看详情</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    document.getElementById('searchResults').innerHTML = html;
+                });
+        }
+
+        function selectSku(skuId) {
+            currentSkuId = skuId;
+            loadSkuDetail();
+        }
+
+        function loadSkuDetail() {
+            if (!currentSkuId) return;
+            const days = document.getElementById('daysSelect').value;
+            fetch(`/api/sku/trend?id=${currentSkuId}&days=${days}`)
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('skuDetailCard').style.display = 'block';
+                    document.getElementById('skuCharts').style.display = 'grid';
+                    const indexChange = data.price_index - 100;
+                    document.getElementById('skuSummary').innerHTML = `
+                        <div class="detail-item">
+                            <div class="label">商品名称</div>
+                            <div class="value" style="font-size:18px;">${data.sku_name}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">当前价格 / 基期价格</div>
+                            <div class="value" style="font-size:20px;">
+                                ¥${data.current_price.toFixed(2)}
+                                <span style="font-size:14px;color:#90caf9;">/ ¥${data.base_price.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">SKU价格指数</div>
+                            <div class="value">${data.price_index.toFixed(2)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">较基期涨跌幅</div>
+                            <div class="value" style="color:${indexChange >= 0 ? '#ff5252' : '#4caf50'}">
+                                ${indexChange >= 0 ? '+' : ''}${indexChange.toFixed(2)}%
+                            </div>
+                        </div>
+                    `;
+                    const priceOption = {
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+                        dataZoom: [
+                            { type: 'slider', height: 20, bottom: 5, borderColor: '#2a6cb8', fillerColor: 'rgba(42,108,184,0.3)' },
+                            { type: 'inside' }
+                        ],
+                        xAxis: {
+                            type: 'category',
+                            data: data.dates,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 10, rotate: 45 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        series: [{
+                            type: 'line',
+                            data: data.prices,
+                            smooth: true,
+                            showSymbol: false,
+                            lineStyle: { color: '#4fc3f7', width: 2 },
+                            itemStyle: { color: '#4fc3f7' },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(79,195,247,0.3)' },
+                                    { offset: 1, color: 'rgba(79,195,247,0.05)' }
+                                ])
+                            },
+                            markLine: {
+                                data: [{ yAxis: data.base_price, name: '基期价格', lineStyle: { color: '#ff9800' } }],
+                                label: { color: '#ff9800' }
+                            }
+                        }]
+                    };
+                    skuPriceChart.setOption(priceOption);
+                    const indexOption = {
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+                        dataZoom: [
+                            { type: 'slider', height: 20, bottom: 5, borderColor: '#2a6cb8', fillerColor: 'rgba(42,108,184,0.3)' },
+                            { type: 'inside' }
+                        ],
+                        xAxis: {
+                            type: 'category',
+                            data: data.dates,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 10, rotate: 45 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        series: [{
+                            type: 'line',
+                            data: data.indexes,
+                            smooth: true,
+                            showSymbol: false,
+                            lineStyle: { color: '#ab47bc', width: 2 },
+                            itemStyle: { color: '#ab47bc' },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(171,71,188,0.3)' },
+                                    { offset: 1, color: 'rgba(171,71,188,0.05)' }
+                                ])
+                            },
+                            markLine: {
+                                data: [{ yAxis: 100, name: '基准线', lineStyle: { color: '#ff9800', type: 'dashed' } }],
+                                label: { color: '#ff9800' }
+                            }
+                        }]
+                    };
+                    skuIndexChart.setOption(indexOption);
+                });
+        }
+
+        window.onload = function() {
+            skuPriceChart = echarts.init(document.getElementById('skuPriceChart'));
+            skuIndexChart = echarts.init(document.getElementById('skuIndexChart'));
+            searchSku();
+            document.getElementById('skuSearch').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') searchSku();
+            });
+            window.addEventListener('resize', function() {
+                skuPriceChart.resize();
+                skuIndexChart.resize();
+            });
+        };
+    </script>
+</body>
+</html>

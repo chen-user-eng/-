@@ -1,0 +1,6 @@
+flask==3.0.0
+pandas==2.1.4
+numpy==1.26.2
+python-dateutil==2.8.2
+oss2==2.18.4
+clickhouse-driver==0.2.6

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高频电商价格指数计算平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="date-info" id="dateInfo">数据日期：--</div>
+        <h1>高频电商价格指数计算平台</h1>
+        <div class="nav">
+            <a href="/" class="active">首页大屏</a>
+            <a href="/category.html">类目分析</a>
+            <a href="/sku.html">SKU分析</a>
+            <a href="/anomaly.html">异常数据</a>
+            <a href="/report.html">日报中心</a>
+        </div>
+    </div>
+    <div class="main-container">
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">昨日全网价格指数</div>
+                <div class="value" id="overallIndex">--</div>
+                <div class="change" id="overallMom">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">全网费雪指数</div>
+                <div class="value" id="fisherIndex">--</div>
+                <div class="change">基期=100</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">商品覆盖数量</div>
+                <div class="value" id="productCount">--</div>
+                <div class="change">个SKU</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">类目覆盖数量</div>
+                <div class="value" id="categoryCount">--</div>
+                <div class="change">个类目</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">异常价格商品</div>
+                <div class="value" id="anomalyCount" style="color:#ff9800;">--</div>
+                <div class="change">需关注</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">数据处理状态</div>
+                <div class="value" style="font-size:20px;color:#4caf50;">正常运行</div>
+                <div class="change">T+1自动化</div>
+            </div>
+        </div>
+
+        <div class="charts-row">
+            <div class="chart-card">
+              <div class="chart-title">全网价格指数趋势（近三年）</div>
+              <div class="chart-container" id="trendChart"></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">一级类目价格指数对比</div>
+                <div class="chart-container" id="categoryBarChart"></div>
+            </div>
+        </div>
+
+        <div class="charts-row-2">
+            <div class="chart-card">
+                <div class="chart-title">涨幅TOP10 SKU</div>
+                <ul class="ranking-list" id="gainRanking"></ul>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">跌幅TOP10 SKU</div>
+                <ul class="ranking-list" id="lossRanking"></ul>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">日环比涨跌幅分布</div>
+                <div class="chart-container" id="distChart" style="height:280px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let trendChart, categoryBarChart, distChart;
+
+        function formatChange(val) {
+            if (val === null || val === undefined || isNaN(val)) return '--';
+            const prefix = val > 0 ? '+' : '';
+            return prefix + val.toFixed(2) + '%';
+        }
+
+        function loadOverview() {
+            fetch('/api/overview')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('dateInfo').textContent = '数据日期：' + data.date;
+                    document.getElementById('overallIndex').textContent = data.overall_index.toFixed(2);
+                    const momEl = document.getElementById('overallMom');
+                    momEl.textContent = '日环比：' + formatChange(data.overall_mom);
+                    momEl.className = 'change ' + (data.overall_mom >= 0 ? 'up' : 'down');
+                    document.getElementById('fisherIndex').textContent = data.fisher_index.toFixed(2);
+                    document.getElementById('productCount').textContent = data.product_count;
+                    document.getElementById('categoryCount').textContent = data.category_count;
+                    document.getElementById('anomalyCount').textContent = data.anomaly_count;
+                });
+        }
+
+        function loadTrendChart() {
+        fetch('/api/overall/trend?days=1095')
+          .then(r => r.json())
+          .then(data => {
+            const option = {
+              tooltip: { trigger: 'axis' },
+              legend: {
+                data: ['加权指数', '费雪指数'],
+                textStyle: { color: '#90caf9' },
+                top: 0
+              },
+              grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+              xAxis: {
+                type: 'category',
+                data: data.dates,
+                axisLine: { lineStyle: { color: '#2a6cb8' } },
+                axisLabel: { color: '#90caf9', fontSize: 9, rotate: 45 },
+                boundaryGap: false
+              },
+              yAxis: {
+                type: 'value',
+                name: '价格指数',
+                position: 'left',
+                axisLine: { lineStyle: { color: '#2a6cb8' } },
+                axisLabel: { color: '#90caf9' },
+                splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } },
+                min: function(value) {
+                  return (value.min - 5).toFixed(0);
+                }
+              },
+              dataZoom: [
+                {
+                  type: 'inside',
+                  start: 0,
+                  end: 100
+                },
+                {
+                  type: 'slider',
+                  start: 0,
+                  end: 100,
+                  height: 20,
+                  bottom: 0,
+                  borderColor: '#2a6cb8',
+                  fillerColor: 'rgba(42,108,184,0.3)',
+                  handleStyle: { color: '#4fc3f7' },
+                  textStyle: { color: '#90caf9' }
+                }
+              ],
+              series: [
+                {
+                  name: '加权指数',
+                  type: 'line',
+                  data: data.overall_index,
+                  smooth: true,
+                  lineStyle: { color: '#4fc3f7', width: 2 },
+                  itemStyle: { color: '#4fc3f7' },
+                  areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                      { offset: 0, color: 'rgba(79,195,247,0.4)' },
+                      { offset: 1, color: 'rgba(79,195,247,0.05)' }
+                    ])
+                  },
+                  showSymbol: false
+                },
+                {
+                  name: '费雪指数',
+                  type: 'line',
+                  data: data.fisher_index,
+                  smooth: true,
+                  lineStyle: { color: '#ffb74d', width: 2 },
+                  itemStyle: { color: '#ffb74d' },
+                  showSymbol: false
+                }
+              ]
+            };
+            trendChart.setOption(option);
+          });
+      }
+
+      function loadCategoryBarChart() {
+            fetch('/api/categories')
+                .then(r => r.json())
+                .then(data => {
+                    const names = data.map(d => d.name);
+                    const values = data.map(d => d.price_index);
+                    const option = {
+                        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                        grid: { left: '3%', right: '8%', bottom: '3%', top: '10%', containLabel: true },
+                        xAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        yAxis: {
+                            type: 'category',
+                            data: names.reverse(),
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#e3f2fd', fontSize: 11 }
+                        },
+                        series: [{
+                            type: 'bar',
+                            data: values.reverse(),
+                            barWidth: '60%',
+                            itemStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                    { offset: 0, color: '#1a75ff' },
+                                    { offset: 1, color: '#4fc3f7' }
+                                ]),
+                                borderRadius: [0, 4, 4, 0]
+                            },
+                            label: {
+                                show: true,
+                                position: 'right',
+                                color: '#fff',
+                                fontSize: 11,
+                                formatter: '{c}'
+                            }
+                        }]
+                    };
+                    categoryBarChart.setOption(option);
+                });
+        }
+
+        function loadRankings() {
+            fetch('/api/ranking?type=gain&n=10')
+                .then(r => r.json())
+                .then(data => {
+                    const html = data.map((item, i) => `
+                        <li>
+                            <span class="rank-num">${i + 1}</span>
+                            <span class="item-name" title="${item.name}">${item.name}</span>
+                            <span class="item-change up">${formatChange(item.mom_change)}</span>
+                        </li>
+                    `).join('');
+                    document.getElementById('gainRanking').innerHTML = html;
+                });
+            fetch('/api/ranking?type=loss&n=10')
+                .then(r => r.json())
+                .then(data => {
+                    const html = data.map((item, i) => `
+                        <li>
+                            <span class="rank-num">${i + 1}</span>
+                            <span class="item-name" title="${item.name}">${item.name}</span>
+                            <span class="item-change down">${formatChange(item.mom_change)}</span>
+                        </li>
+                    `).join('');
+                    document.getElementById('lossRanking').innerHTML = html;
+                });
+        }
+
+        function loadDistChart() {
+            fetch('/api/mom/distribution')
+                .then(r => r.json())
+                .then(data => {
+                    const labels = data.map(d => d.range);
+                    const percentages = data.map(d => d.percentage);
+                    const option = {
+                        tooltip: {
+                            trigger: 'axis',
+                            axisPointer: { type: 'shadow' },
+                            formatter: function(params) {
+                                const d = data[params[0].dataIndex];
+                                return d.range + '<br/>数量: ' + d.count + '<br/>占比: ' + d.percentage + '%';
+                            }
+                        },
+                        grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            data: labels,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 9, rotate: 30 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            name: '占比(%)',
+                            nameTextStyle: { color: '#90caf9', fontSize: 10 },
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', formatter: '{value}%' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } },
+                            max: 100
+                        },
+                        series: [{
+                            type: 'bar',
+                            data: percentages,
+                            barWidth: '60%',
+                            itemStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: '#4fc3f7' },
+                                    { offset: 1, color: '#1a75ff' }
+                                ]),
+                                borderRadius: [4, 4, 0, 0]
+                            },
+                            label: {
+                                show: true,
+                                position: 'top',
+                                color: '#90caf9',
+                                fontSize: 9,
+                                formatter: '{c}%'
+                            }
+                        }]
+                    };
+                    distChart.setOption(option);
+                })
+                .catch(err => {
+                    console.error('loadDistChart error:', err);
+                });
+        }
+
+        window.onload = function() {
+            trendChart = echarts.init(document.getElementById('trendChart'));
+            categoryBarChart = echarts.init(document.getElementById('categoryBarChart'));
+            distChart = echarts.init(document.getElementById('distChart'));
+            loadOverview();
+            loadTrendChart();
+            loadCategoryBarChart();
+            loadRankings();
+            loadDistChart();
+            window.addEventListener('resize', function() {
+                trendChart.resize();
+                categoryBarChart.resize();
+                distChart.resize();
+            });
+        };
+    </script>
+</body>
+</html>

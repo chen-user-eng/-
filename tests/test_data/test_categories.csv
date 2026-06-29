@@ -1,0 +1,4 @@
+category_id,category_name,hierarchy,parent_id,weight,base_price
+1106000000,食品,1,,100,120.00
+1106000001,服装,1,,80,120.00
+1106000002,电子,1,,60,120.00

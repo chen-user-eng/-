@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>异常数据 - 高频电商价格指数计算平台</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="date-info">数据质量监控</div>
+        <h1>高频电商价格指数计算平台</h1>
+        <div class="nav">
+            <a href="/">首页大屏</a>
+            <a href="/category.html">类目分析</a>
+            <a href="/sku.html">SKU分析</a>
+            <a href="/anomaly.html" class="active">异常数据</a>
+            <a href="/report.html">日报中心</a>
+        </div>
+    </div>
+    <div class="page-container">
+        <div class="page-header">
+            <h2>异常数据监控</h2>
+            <div class="search-box">
+                <select id="typeFilter" onchange="loadAnomaly(1)">
+                    <option value="">全部类型</option>
+                    <option value="价格突变">价格突变</option>
+                    <option value="价格偏离">价格偏离</option>
+                    <option value="价格超限">价格超限</option>
+                    <option value="价格异常">价格异常</option>
+                </select>
+                <input type="text" id="dateInput" placeholder="选择日期 (YYYY-MM-DD)" style="width:200px;">
+                <button onclick="loadAnomaly(1)">查询</button>
+                <span style="color:#90caf9;font-size:13px;" id="totalInfo"></span>
+            </div>
+        </div>
+
+        <div class="stats-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+            <div class="stat-card" style="padding: 15px;">
+                <div class="label">总异常数</div>
+                <div class="value" id="totalCount" style="font-size: 28px;">--</div>
+            </div>
+            <div class="stat-card" style="padding: 15px;">
+                <div class="label">价格突变</div>
+                <div class="value" id="mutCount" style="font-size: 28px; color:#ff5252;">--</div>
+            </div>
+            <div class="stat-card" style="padding: 15px;">
+                <div class="label">价格偏离</div>
+                <div class="value" id="devCount" style="font-size: 28px; color:#ff9800;">--</div>
+            </div>
+            <div class="stat-card" style="padding: 15px;">
+                <div class="label">价格超限</div>
+                <div class="value" id="overCount" style="font-size: 28px; color:#9c27b0;">--</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>商品ID</th>
+                        <th>商品名称</th>
+                        <th>一级类目</th>
+                        <th>当前价格</th>
+                        <th id="priceCol2Header">基期价格</th>
+                        <th>异常类型</th>
+                        <th>异常描述</th>
+                    </tr>
+                </thead>
+                <tbody id="anomalyTable"></tbody>
+            </table>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const pageSize = 20;
+        let total = 0;
+        let latestDate = '';
+
+        function formatPrice(val) {
+            if (val === null || val === undefined || val === '' || isNaN(val)) return '-';
+            return '¥' + parseFloat(val).toFixed(2);
+        }
+
+        function getTypeClass(type) {
+            if (type === '价格突变') return 'badge-danger';
+            if (type === '价格偏离') return 'badge-warning';
+            if (type === '价格超限') return 'badge-purple';
+            return 'badge-anomaly';
+        }
+
+        function loadAnomaly(page) {
+            currentPage = page || 1;
+            const date = document.getElementById('dateInput').value;
+            const type = document.getElementById('typeFilter').value;
+            let url = `/api/anomaly?page=${currentPage}&page_size=${pageSize}`;
+            if (date) url += `&date=${date}`;
+            if (type) url += `&type=${encodeURIComponent(type)}`;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    total = data.total;
+                    document.getElementById('totalInfo').textContent = `共 ${total} 条异常记录`;
+
+                    // 显示统计数据
+                    if (data.stats) {
+                        document.getElementById('totalCount').textContent = data.stats.total || 0;
+                        document.getElementById('mutCount').textContent = data.stats['价格突变'] || 0;
+                        document.getElementById('devCount').textContent = data.stats['价格偏离'] || 0;
+                        document.getElementById('overCount').textContent = data.stats['价格超限'] || 0;
+                    }
+
+                    const tbody = document.getElementById('anomalyTable');
+                    const typeFilter = document.getElementById('typeFilter').value;
+
+                    if (typeFilter === '价格突变') {
+                        document.getElementById('priceCol2Header').textContent = '昨日价格';
+                    } else {
+                        document.getElementById('priceCol2Header').textContent = '基期价格';
+                    }
+
+                    if (data.list.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#90caf9;">暂无异常数据</td></tr>';
+                    } else {
+                        tbody.innerHTML = data.list.map(item => {
+                            let price2;
+                            let price2Label;
+                            if (typeFilter === '价格突变' || item.anomaly_type === '价格突变') {
+                                price2 = formatPrice(item.prev_price);
+                            } else {
+                                price2 = formatPrice(item.base_price);
+                            }
+                            return `
+                            <tr>
+                                <td>${item.dt || item.date || '-'}</td>
+                                <td style="font-family: monospace; font-size: 12px;">${item.product_id || '-'}</td>
+                                <td>${item.product_name || item.name || '-'}</td>
+                                <td>${item.category_l1 || item.category || '-'}</td>
+                                <td style="color:#ff9800;">${formatPrice(item.current_price || item.price)}</td>
+                                <td>${price2}</td>
+                                <td><span class="badge ${getTypeClass(item.anomaly_type)}">${item.anomaly_type || '-'}</span></td>
+                                <td style="color:#90caf9; font-size: 12px;">${item.anomaly_desc || '-'}</td>
+                            </tr>
+                        `;
+                        }).join('');
+                    }
+                    renderPagination();
+                });
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(total / pageSize);
+            const pag = document.getElementById('pagination');
+            let html = `<button onclick="loadAnomaly(1)" ${currentPage === 1 ? 'disabled' : ''}>首页</button>`;
+            html += `<button onclick="loadAnomaly(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+            const start = Math.max(1, currentPage - 2);
+            const end = Math.min(totalPages, currentPage + 2);
+            for (let i = start; i <= end; i++) {
+                html += `<button class="${i === currentPage ? 'active' : ''}" onclick="loadAnomaly(${i})">${i}</button>`;
+            }
+            html += `<button onclick="loadAnomaly(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+            html += `<button onclick="loadAnomaly(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>末页</button>`;
+            pag.innerHTML = html;
+        }
+
+        window.onload = function() {
+            // 先获取概览数据拿到最新日期
+            fetch('/api/overview')
+                .then(r => r.json())
+                .then(data => {
+                    latestDate = data.date;
+                    document.getElementById('dateInput').value = latestDate;
+                    loadAnomaly(1);
+                });
+        };
+    </script>
+</body>
+</html>

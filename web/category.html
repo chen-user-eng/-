@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>类目分析 - 高频电商价格指数计算平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="date-info">类目价格指数分析</div>
+        <h1>高频电商价格指数计算平台</h1>
+        <div class="nav">
+            <a href="/">首页大屏</a>
+            <a href="/category.html" class="active">类目分析</a>
+            <a href="/sku.html">SKU分析</a>
+            <a href="/anomaly.html">异常数据</a>
+            <a href="/report.html">日报中心</a>
+        </div>
+    </div>
+    <div class="page-container">
+        <div class="page-header">
+            <h2>类目价格指数分析</h2>
+            <div class="search-box">
+                <select id="categorySelect" onchange="loadCategoryDetail()"></select>
+                <select id="daysSelect" onchange="loadCategoryDetail()">
+                    <option value="30">近30日</option>
+                    <option value="60">近60日</option>
+                    <option value="90">近90日</option>
+                    <option value="180">近180日</option>
+                    <option value="365">近1年</option>
+                    <option value="730">近2年</option>
+                    <option value="1095" selected>近3年（全部）</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="overviewSection" style="display:none;">
+            <div class="chart-card">
+                <div class="chart-title">一级类目价格指数总览</div>
+                <div class="chart-container" id="overviewChart" style="height: 500px;"></div>
+            </div>
+        </div>
+
+        <div id="detailSection">
+            <div class="detail-card">
+                <div class="detail-grid" id="categorySummary"></div>
+            </div>
+
+            <div class="charts-row">
+                <div class="chart-card">
+                    <div class="chart-title">类目价格指数走势</div>
+                    <div class="chart-container" id="catTrendChart"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">日环比涨跌幅</div>
+                    <div class="chart-container" id="catMomChart"></div>
+                </div>
+            </div>
+
+            <div class="charts-row-2" style="grid-template-columns: 1fr 1fr;">
+                <div class="chart-card">
+                    <div class="chart-title">类目内涨幅TOP10商品</div>
+                    <ul class="ranking-list" id="catTopGain"></ul>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">类目内跌幅TOP10商品</div>
+                    <ul class="ranking-list" id="catTopLoss"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let catTrendChart, catMomChart, overviewChart;
+        const categoryColors = {
+            '食品': '#4fc3f7',
+            '烟酒及用品': '#ff9800',
+            '衣着': '#ab47bc',
+            '家庭设备用品及维修服务': '#66bb6a',
+            '医疗保健和个人用品': '#ef5350',
+            '交通和通信': '#26c6da',
+            '娱乐教育文化用品及服务': '#ffa726',
+            '居住': '#78909c'
+        };
+
+        function formatChange(val) {
+            if (val === null || val === undefined || isNaN(val)) return '--';
+            const prefix = val > 0 ? '+' : '';
+            return prefix + val.toFixed(2) + '%';
+        }
+
+        function loadOverview() {
+            const days = document.getElementById('daysSelect').value;
+            document.getElementById('overviewSection').style.display = 'block';
+            document.getElementById('detailSection').style.display = 'none';
+            fetch(`/api/categories/trend?days=${days}`)
+                .then(r => r.json())
+                .then(data => {
+                    const series = data.categories.map(cat => ({
+                        name: cat.name,
+                        type: 'line',
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: {
+                            color: categoryColors[cat.name] || '#4fc3f7',
+                            width: 2
+                        },
+                        itemStyle: {
+                            color: categoryColors[cat.name] || '#4fc3f7'
+                        },
+                        data: cat.price_index
+                    }));
+                    const option = {
+                        tooltip: { trigger: 'axis' },
+                        legend: {
+                            data: data.categories.map(c => c.name),
+                            textStyle: { color: '#90caf9' },
+                            top: 0,
+                            type: 'scroll',
+                            selectedMode: 'multiple'
+                        },
+                        grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+                        dataZoom: [
+                            { type: 'slider', height: 20, bottom: 5, borderColor: '#2a6cb8', fillerColor: 'rgba(42,108,184,0.3)' },
+                            { type: 'inside' }
+                        ],
+                        xAxis: {
+                            type: 'category',
+                            data: data.dates,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 10, rotate: 45 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            name: '价格指数',
+                            nameTextStyle: { color: '#90caf9' },
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        series: series
+                    };
+                    if (!overviewChart) {
+                        overviewChart = echarts.init(document.getElementById('overviewChart'));
+                    }
+                    overviewChart.setOption(option, true);
+                });
+        }
+
+        function loadCategories() {
+            fetch('/api/categories')
+                .then(r => r.json())
+                .then(data => {
+                    const sel = document.getElementById('categorySelect');
+                    let options = '<option value="overview">总览</option>';
+                    options += data.map(c =>
+                        `<option value="${c.id}">${c.name} - ${c.price_index.toFixed(2)}</option>`
+                    ).join('');
+                    sel.innerHTML = options;
+                    sel.value = 'overview';
+                    loadCategoryDetail();
+                });
+        }
+
+        function loadCategoryDetail() {
+            const catId = document.getElementById('categorySelect').value;
+            const days = document.getElementById('daysSelect').value;
+
+            if (catId === 'overview') {
+                loadOverview();
+                return;
+            }
+
+            document.getElementById('overviewSection').style.display = 'none';
+            document.getElementById('detailSection').style.display = 'block';
+            fetch(`/api/category/trend?id=${catId}&days=${days}`)
+                .then(r => r.json())
+                .then(data => {
+                    const latestIdx = data.price_index[data.price_index.length - 1];
+                    const latestMom = data.mom_change[data.mom_change.length - 1];
+                    const startIdx = data.price_index[0];
+                    const periodChange = ((latestIdx - startIdx) / startIdx * 100).toFixed(2);
+                    document.getElementById('categorySummary').innerHTML = `
+                        <div class="detail-item">
+                            <div class="label">类目名称</div>
+                            <div class="value" style="font-size:20px;">${data.category_name}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">当前价格指数</div>
+                            <div class="value">${latestIdx.toFixed(2)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">日环比</div>
+                            <div class="value" style="color:${latestMom >= 0 ? '#ff5252' : '#4caf50'}">${formatChange(latestMom)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">区间涨跌幅</div>
+                            <div class="value" style="color:${periodChange >= 0 ? '#ff5252' : '#4caf50'}">${periodChange >= 0 ? '+' : ''}${periodChange}%</div>
+                        </div>
+                    `;
+                    const trendOption = {
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+                        dataZoom: [
+                            { type: 'slider', height: 20, bottom: 5, borderColor: '#2a6cb8', fillerColor: 'rgba(42,108,184,0.3)' },
+                            { type: 'inside' }
+                        ],
+                        xAxis: {
+                            type: 'category',
+                            data: data.dates,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 10, rotate: 45 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        series: [{
+                            type: 'line',
+                            data: data.price_index,
+                            smooth: true,
+                            showSymbol: false,
+                            lineStyle: { color: '#4fc3f7', width: 2 },
+                            itemStyle: { color: '#4fc3f7' },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(79,195,247,0.3)' },
+                                    { offset: 1, color: 'rgba(79,195,247,0.05)' }
+                                ])
+                            }
+                        }]
+                    };
+                    catTrendChart.setOption(trendOption);
+                    const momOption = {
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+                        dataZoom: [
+                            { type: 'slider', height: 20, bottom: 5, borderColor: '#2a6cb8', fillerColor: 'rgba(42,108,184,0.3)' },
+                            { type: 'inside' }
+                        ],
+                        xAxis: {
+                            type: 'category',
+                            data: data.dates,
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', fontSize: 10, rotate: 45 }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#2a6cb8' } },
+                            axisLabel: { color: '#90caf9', formatter: '{value}%' },
+                            splitLine: { lineStyle: { color: 'rgba(42,108,184,0.2)' } }
+                        },
+                        series: [{
+                            type: 'bar',
+                            data: data.mom_change,
+                            barWidth: '40%',
+                            itemStyle: {
+                                color: function(params) {
+                                    return params.data >= 0 ? '#ff5252' : '#4caf50';
+                                }
+                            }
+                        }]
+                    };
+                    catMomChart.setOption(momOption);
+                });
+            fetch(`/api/category/skus?id=${catId}`)
+                .then(r => r.json())
+                .then(data => {
+                    const gainSorted = [...data].sort((a, b) => b.mom_change - a.mom_change).slice(0, 10);
+                    const lossSorted = [...data].sort((a, b) => a.mom_change - b.mom_change).slice(0, 10);
+                    document.getElementById('catTopGain').innerHTML = gainSorted.map((item, i) => `
+                        <li>
+                            <span class="rank-num">${i + 1}</span>
+                            <span class="item-name" title="${item.name}">${item.name}</span>
+                            <span class="item-change up">${formatChange(item.mom_change)}</span>
+                        </li>
+                    `).join('');
+                    document.getElementById('catTopLoss').innerHTML = lossSorted.map((item, i) => `
+                        <li>
+                            <span class="rank-num">${i + 1}</span>
+                            <span class="item-name" title="${item.name}">${item.name}</span>
+                            <span class="item-change down">${formatChange(item.mom_change)}</span>
+                        </li>
+                    `).join('');
+                });
+        }
+
+        window.onload = function() {
+            catTrendChart = echarts.init(document.getElementById('catTrendChart'));
+            catMomChart = echarts.init(document.getElementById('catMomChart'));
+            loadCategories();
+            window.addEventListener('resize', function() {
+                if (overviewChart) overviewChart.resize();
+                catTrendChart.resize();
+                catMomChart.resize();
+            });
+        };
+    </script>
+</body>
+</html>
