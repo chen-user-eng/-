@@ -67,7 +67,7 @@ def test_product_coverage():
 
     # 获取有索引数据的商品
     sku_data = index_df[index_df['index_type'] == 'Sku']
-    indexed_products = set(sku_data['target_id'].unique())
+    indexed_products = set(sku_data['target_id'].astype(str).unique())
     total_products = set(products_df['product_id'].astype(str).unique())
 
     # 计算覆盖率
@@ -90,10 +90,11 @@ def test_product_coverage():
     # 检查各类目覆盖情况
     products_df['category_id'] = products_df['category_id'].astype(str)
     sku_data['target_id'] = sku_data['target_id'].astype(str)
+    indexed_products_str = set(sku_data['target_id'].unique())
 
     for cat_id in products_df['category_id'].unique():
-        cat_products = set(products_df[products_df['category_id'] == cat_id]['product_id'].unique())
-        cat_indexed = indexed_products & cat_products
+        cat_products = set(products_df[products_df['category_id'] == cat_id]['product_id'].astype(str).unique())
+        cat_indexed = indexed_products_str & cat_products
         cat_coverage = len(cat_indexed) / len(cat_products) * 100 if len(cat_products) > 0 else 0
         result.record(
             f"  类目 {cat_id} 覆盖率: {cat_coverage:.0f}%",
