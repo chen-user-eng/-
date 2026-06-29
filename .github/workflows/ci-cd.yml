@@ -87,10 +87,23 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Check if deployment is configured
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.CH_HOST }}" ] || [ -z "${{ secrets.OSS_ACCESS_KEY_ID }}" ]; then
+            echo "Deployment secrets not configured, skipping deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Deployment secrets configured, proceeding with deploy"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Install dependencies
+        if: steps.check-secrets.outputs.skip == 'false'
         run: pip install -r requirements.txt
 
       - name: Create config.py
+        if: steps.check-secrets.outputs.skip == 'false'
         run: |
           cat > config.py << 'CONFIGEOF'
           import os
@@ -116,12 +129,14 @@ jobs:
           CONFIGEOF
 
       - name: Upload Test Data to OSS
+        if: steps.check-secrets.outputs.skip == 'false'
         run: python tests/upload_test_data.py
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
       - name: Deploy to ClickHouse
+        if: steps.check-secrets.outputs.skip == 'false'
         run: python scripts/setup_clickhouse_from_oss.py
         env:
           CH_HOST: ${{ secrets.CH_HOST }}
@@ -133,6 +148,7 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
       - name: Verify Deployment
+        if: steps.check-secrets.outputs.skip == 'false'
         run: python tests/verify_deploy.py
         env:
           CH_HOST: ${{ secrets.CH_HOST }}
@@ -142,6 +158,7 @@ jobs:
           CH_DATABASE: ${{ secrets.CH_DATABASE }}
 
       - name: Start Visualization Service
+        if: steps.check-secrets.outputs.skip == 'false'
         run: |
           nohup python app_ch.py > flask.log 2>&1 &
           echo $! > flask.pid
@@ -160,6 +177,11 @@ jobs:
           CH_DATABASE: ${{ secrets.CH_DATABASE }}
 
       - name: Health Check
+        if: steps.check-secrets.outputs.skip == 'false'
         run: |
           curl -s http://localhost:5000/api/health || echo "Health endpoint not available"
           curl -s http://localhost:5000/api/index/summary | head -c 200
+
+      - name: Deployment skipped
+        if: steps.check-secrets.outputs.skip == 'true'
+        run: echo "Deployment skipped - CH_HOST and OSS_ACCESS_KEY_ID secrets not configured"
